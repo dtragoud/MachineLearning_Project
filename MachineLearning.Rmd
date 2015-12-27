@@ -1,0 +1,126 @@
+---
+title: "Prediction Assignment Writeup"
+author: "DT"
+date: "27.12.15"
+output:
+  html_document:
+    keep_md: yes
+    theme: spacelab
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+# Executive Summary/Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of six (6) participants. They were asked to perform barbell lifts correctly and incorrectly in five (5) different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har
+
+## Data 
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv. The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+## Libraries
+The following libraries are being used throughout the analysis. Do note that below we first check if the required packages are already install and if not, we install them.
+```{r}
+list.of.packages <- c("caret", "corrplot", "kernlab", "knitr", "randomForest")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+library(caret)
+library(corrplot)
+library(kernlab)
+library(knitr)
+library(randomForest)
+```
+```{r setoptions, echo = FALSE}
+opts_chunk$set(cache = FALSE)
+```
+
+# Data
+## Download and store the train and test data set
+```{r, eval = FALSE}
+# get and set wd
+WD <- getwd()
+setwd(WD)
+
+# create a data folder in the working directory
+if (!file.exists("data")) {dir.create("data")}
+
+# file URL and destination file
+fileUrl1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+destfile1 <- "./data/pml-training.csv"
+fileUrl2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+destfile2 <- "./data/pml-testing.csv"
+
+# download the train and test data set
+if (!file.exists("data/pml-training.csv")) {download.file(fileUrl1, destfile = destfile1)} 
+if (!file.exists("data/pml-testing.csv")) {download.file(fileUrl2, destfile = destfile2)}
+```
+
+## Load data into R and tidy/clean data
+```{r}
+# load the train data set 
+dtraining <- read.csv("./data/pml-training.csv", na.strings= c("NA",""," "))
+```
+
+## Tidying and cleaning data
+```{r}
+# clean the data by removing NAs
+dtrainingNAs <- apply(dtraining, 2, function(x) {sum(is.na(x))})
+dtrainingC <- dtraining[,which(dtrainingNAs == 0)]
+
+# clean the data by removing the first 8 columns which act as data identifiers
+dtrainingC <- dtrainingC[8:length(dtrainingC)]
+```
+
+# Model Creation
+## Data splitting
+The cleaned test data is split up into a train and a test set in a 60:40 ratio. The first data set is used to train the model and the second data set is used to test the model against data it is not specifically fitted to.
+```{r}
+# split the cleaned test data into a train and a test data set
+inTrain <- createDataPartition(y = dtrainingC$classe, p = 0.6, list = FALSE)
+training <- dtrainingC[inTrain, ]
+testing <- dtrainingC[-inTrain, ]
+```
+
+## Model selection
+A random forest model is selected to predict the classification. Using random forest, the out of sample error should be small and one should expect anything smaller than 3%. Random forest models do have methods for balancing error in class population unbalanced data sets.
+
+## Exploratory data analysis
+Before we proceed, it is important to conduct some preliminary exploratory data analysis and inspect tha data for high correlating variables. Therefore, a correllation plot is shown below to determine what the variables relationships are.
+```{r, fig.height = 6, fig.width = 8}
+# correlation matrix plot
+cMatrix <- cor(training[, -length(training)])
+corrplot(cMatrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.8,  tl.col = rgb(0, 0, 0))
+```
+By inspecting the plot one can see that there are no highly correlated predictors, so all of them can be included in the model. Take into account that the dark red and blue colours highlight the negative and positive relationship between the variables respectively.
+
+## Model fit
+```{r}
+# fit a random forest model to predict the classe using all other variables as the predictor
+model <- randomForest(classe ~ ., data = training)
+model
+```
+
+## Test the model (40% of the original train data)
+The model is used - below - to classify the remaining 40% of the original train data set.
+```{r}
+# test the model using the remaining 40% of original train data
+predictTest <- predict(model, testing)
+confusionMatrix(testing$classe, predictTest)
+```
+
+This model yields a 99.2, 99.3% prediction accuracy and can thus be used to predict new data, namely be used on the original test data.
+
+## Predict (use the model on the original test data)
+The original test data are loaded into R and cleaned using the same strategy as for the original train data set. The model is then used to predict the classifications of the 20 results of this new data set.
+```{r}
+# clean the original test data
+dtest <- read.csv("./data/pml-testing.csv", na.strings= c("NA",""," "))
+dtestNAs <- apply(dtest, 2, function(x) {sum(is.na(x))})
+dtestC <- dtest[,which(dtestNAs == 0)]
+dtestC <- dtestC[8:length(dtestC)]
+
+# predict the classes of the new data set
+predictTest <- predict(model, dtestC)
+predictTest
+```
+
+## Conclusion
+This model has proven to be very robust and adequately predict how well a person is performing over a given exercise, by using data from multiple measuring instruments. It is worth noting that the model used here is relatively simple and its implementation into R is also relatively straightforward.
